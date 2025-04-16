@@ -15,12 +15,12 @@ def call(Map config = [:]) {
     def threshold = config.threshold ?: 100
     def severity = config.severity ?: 'HIGH,CRITICAL'
     def installTrivy = config.installTrivy ?: true
-    
+
     echo "Running Trivy security scan on ${imageName}:${imageTag}"
     
     // Create directory for results
     sh "mkdir -p trivy-results"
-    
+
     // Create a dummy report in case Trivy fails
     sh """
         echo '{
@@ -40,7 +40,17 @@ def call(Map config = [:]) {
         
         echo '<html><head><title>Trivy Scan Results</title></head><body><h1>Trivy Scan Results</h1><p>Scan failed or Trivy not available. This is a placeholder report.</p></body></html>' > trivy-results/${imageName.replaceAll('/', '-')}-${imageTag}.html
     """
-    
+
+    // Install Trivy if needed
+    if (installTrivy) {
+        try {
+            sh "which trivy || (curl -sSfL https://github.com/aquasecurity/trivy/releases/download/v0.38.3/trivy_0.38.3_Linux-64bit.deb -o trivy.deb && sudo dpkg -i trivy.deb)"
+            echo "Trivy installed successfully."
+        } catch (Exception e) {
+            error("Failed to install Trivy: ${e.message}")
+        }
+    }
+
     // Try to use Docker to run Trivy instead of installing it
     def exitCode = sh(
         script: """
@@ -64,7 +74,7 @@ def call(Map config = [:]) {
                 --output /trivy-results/${imageName.replaceAll('/', '-')}-${imageTag}.html \
                 --severity ${severity} \
                 ${imageName}:${imageTag} || true
-                
+
             # Count vulnerabilities (if scan succeeded)
             if [ -f trivy-results/${imageName.replaceAll('/', '-')}-${imageTag}.json ]; then
                 VULN_COUNT=\$(grep -c "VulnerabilityID" trivy-results/${imageName.replaceAll('/', '-')}-${imageTag}.json || echo 0)
@@ -72,8 +82,8 @@ def call(Map config = [:]) {
                 
                 if [ \$VULN_COUNT -gt ${threshold} ]; then
                     echo "Vulnerability count \$VULN_COUNT exceeds threshold ${threshold}"
-                    # Don't fail the build, just warn
-                    # exit 1
+                    # Optionally fail the build if vulnerabilities exceed the threshold
+                    exit 1
                 fi
             else
                 echo "Trivy scan failed or produced no results"
@@ -81,11 +91,5 @@ def call(Map config = [:]) {
         """,
         returnStatus: true
     )
-    
+
     // Don't fail the build if Trivy scan fails
-    if (exitCode != 0) {
-        echo "Security scan encountered issues, but continuing with the build"
-    } else {
-        echo "Security scan completed successfully"
-    }
-}
