@@ -17,7 +17,7 @@ def call(Map config = [:]) {
     def installTrivy = config.installTrivy ?: true
 
     echo "Running Trivy security scan on ${imageName}:${imageTag}"
-    
+
     // Create directory for results
     sh "mkdir -p trivy-results"
 
@@ -37,7 +37,7 @@ def call(Map config = [:]) {
                 }
             ]
         }' > trivy-results/${imageName.replaceAll('/', '-')}-${imageTag}.json
-        
+
         echo '<html><head><title>Trivy Scan Results</title></head><body><h1>Trivy Scan Results</h1><p>Scan failed or Trivy not available. This is a placeholder report.</p></body></html>' > trivy-results/${imageName.replaceAll('/', '-')}-${imageTag}.html
     """
 
@@ -63,7 +63,7 @@ def call(Map config = [:]) {
                 --output /trivy-results/${imageName.replaceAll('/', '-')}-${imageTag}.json \
                 --severity ${severity} \
                 ${imageName}:${imageTag} || true
-                
+
             # Generate HTML report
             docker run --rm \
                 -v /var/run/docker.sock:/var/run/docker.sock \
@@ -93,3 +93,7 @@ def call(Map config = [:]) {
     )
 
     // Don't fail the build if Trivy scan fails
+    if (exitCode != 0) {
+        echo "Trivy scan failed, but continuing the build process"
+    }
+}
